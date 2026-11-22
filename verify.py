@@ -21,6 +21,10 @@ TIME_TOL_PCT = 3.0
 DPLUS_TOL_PCT = 10.0
 
 
+if len(sys.argv) < 2:
+    raise SystemExit("usage: verify.py ACTIVITY.fit")
+
+
 def check(path):
     recs, s = core.load(path)
     segs, _ = html.km_segments(recs)
