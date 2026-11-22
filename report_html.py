@@ -67,7 +67,7 @@ def km_segments(recs):
     return segs, table
 
 
-def route_features(recs, table, step=100):
+def route_features(recs, table, step=100, asc=None):
     """100 m segments carrying the time delta versus the athlete's own model.
 
     Binning lives in core.bins_100m so the map and the terrain CSV cannot
@@ -79,7 +79,10 @@ def route_features(recs, table, step=100):
     feats = [{"type": "Feature",
               "properties": {"km": round(b["chainage_m"] / 1000, 2),
                              "grade": b["grade_pct"],
-                             "delta": b["delta_s"]},
+                             "delta": b["delta_s"],
+                             **({"tri": round(t, 2)} if (asc and (t := core.tri_at(
+                                 asc, b["coords"][len(b["coords"]) // 2][1],
+                                 b["coords"][len(b["coords"]) // 2][0])) is not None) else {})},
               "geometry": {"type": "LineString", "coordinates": b["coords"]}}
              for b in core.bins_100m(recs, lookup, step)]
     return {"type": "FeatureCollection", "features": feats}
@@ -184,18 +187,26 @@ def svg_profile(segs, w=900, h=190):
             f'{ticks}</svg>')
 
 
-def map_block(geojson):
+def map_block(geojson, has_dtm=False):
     gj = json.dumps(geojson, ensure_ascii=False)
+    mode_btn = '<button id="tmode">切換上色</button>' if has_dtm else ""
     return f"""
 <div id="map"></div>
 <div class="mapctl">
   <button id="t3d">切換 3D 地形</button>
+  {mode_btn}
   <span class="hint">點擊路線查看分段數據</span>
 </div>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 const ROUTE = {gj};
+const BY_DELTA = ['interpolate', ['linear'], ['get', 'delta'],
+                  -30, '#1e8449', -5, '#27ae60', 5, '#95a5a6', 20, '#e67e22', 45, '#c0392b'];
+const BY_TRI = ['case', ['has', 'tri'],
+                ['interpolate', ['linear'], ['get', 'tri'],
+                 0, '#1e8449', 1, '#f1c40f', 2.5, '#c0392b'], '#8794a3'];
+let cmode = 'delta';
 const map = new maplibregl.Map({{
   container: 'map',
   style: {{
@@ -222,8 +233,7 @@ const map = new maplibregl.Map({{
       {{ id: 'route', type: 'line', source: 'route',
          paint: {{
            'line-width': 3.2, 'line-opacity': 0.95,
-           'line-color': ['interpolate', ['linear'], ['get', 'delta'],
-                          -30, '#1e8449', -5, '#27ae60', 5, '#95a5a6', 20, '#e67e22', 45, '#c0392b']
+           'line-color': BY_DELTA
          }} }}
     ]
   }},
@@ -231,6 +241,19 @@ const map = new maplibregl.Map({{
   attributionControl: {{ compact: true, customAttribution: '底圖 © Esri · 地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS' }}
 }});
 map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'bottom-right');
+const tbtn = document.getElementById('tmode');
+if (tbtn) {{
+  const sub = document.getElementById('mapsub');
+  const TXT = {{
+    delta: '路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。模型依本人坡度與速度關係推算。',
+    tri: '路線按地形粗糙度（TRI）上色：綠色平坦、黃色中等、紅色崎嶇（3 m LiDAR DTM）。'
+  }};
+  tbtn.onclick = () => {{
+    cmode = cmode === 'delta' ? 'tri' : 'delta';
+    map.setPaintProperty('route', 'line-color', cmode === 'delta' ? BY_DELTA : BY_TRI);
+    sub.textContent = TXT[cmode];
+  }};
+}}
 const b = new maplibregl.LngLatBounds();
 ROUTE.features.forEach(f => f.geometry.coordinates.forEach(c => b.extend(c)));
 map.fitBounds(b, {{ padding: 40, pitch: 45, bearing: -18, duration: 0 }});
@@ -260,7 +283,30 @@ map.on('mouseleave', 'route', () => map.getCanvas().style.cursor = '');
 </script>"""
 
 
-def build(rep, prof, segs, gj):
+def terrain_stats(gj):
+    """Ruggedness summary + whether it explains the time loss."""
+    feats = [f["properties"] for f in gj["features"] if "tri" in f["properties"]]
+    if len(feats) < 20:
+        return None
+    tri = [f["tri"] for f in feats]
+    dl = [f["delta"] for f in feats]
+    tri_sorted = sorted(tri)
+
+    def corr(a, b):
+        ma, mb = sum(a) / len(a), sum(b) / len(b)
+        num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+        den = (sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b)) ** 0.5
+        return num / den if den else 0.0
+
+    down = [(f["tri"], f["delta"]) for f in feats if f["grade"] < -3]
+    r_all = corr(tri, dl)
+    r_down = corr([d[0] for d in down], [d[1] for d in down]) if len(down) > 10 else None
+    return dict(n=len(feats), median=tri_sorted[len(tri) // 2],
+                p90=tri_sorted[int(len(tri) * 0.9)], mx=tri_sorted[-1],
+                r_all=r_all, r_down=r_down, n_down=len(down))
+
+
+def build(rep, prof, segs, gj, has_dtm=False):
     notes, dens, target = assessment(rep, prof)
     worst = sorted(segs, key=lambda s: -s["delta_s"])[:3]
     tips = advice(prof, worst)
@@ -270,6 +316,26 @@ def build(rep, prof, segs, gj):
         f"<td class=\"{'neg' if s['delta_s'] > 10 else 'pos' if s['delta_s'] < -10 else ''}\">"
         f"{s['delta_s']:+d}</td><td>{s['hr'] or '—'}</td><td>{s['cadence'] or '—'}</td></tr>"
         for s in segs)
+    ts = terrain_stats(gj) if has_dtm else None
+    if ts:
+        if abs(ts["r_all"]) < 0.2 and (ts["r_down"] is None or abs(ts["r_down"]) < 0.25):
+            verdict = ("地形粗糙度解釋不到時間損失；主因更可能在體能、配速或補給。")
+        elif ts["r_down"] is not None and ts["r_down"] > 0.3:
+            verdict = ("落坡段的時間損失與地形粗糙度相關，技術訓練有直接回報。")
+        else:
+            verdict = "地形與時間損失的關係不明確，需更多同類路線數據。"
+        terrain_block = (
+            f'<h2>地形粗糙度</h2>\n'
+            f'<p class="sub">TRI：每個像素與 8 個鄰居高差的 RMS（Riley 1999），'
+            f'以 LiDAR 派生 3 m 裸地 DTM 計算。</p>\n'
+            f'<ul><li>{ts["n"]} 段：中位數 {ts["median"]:.2f} m、p90 {ts["p90"]:.2f} m、'
+            f'最大 {ts["mx"]:.2f} m。</li>'
+            f'<li>與時間損失的相關性：全段 r = {ts["r_all"]:+.2f}；'
+            + (f'落坡段（{ts["n_down"]} 段）r = {ts["r_down"]:+.2f}。' if ts["r_down"] is not None
+               else "落坡段數據不足。")
+            + f'</li><li>{verdict}</li></ul>\n')
+    else:
+        terrain_block = ""
     worst_li = "".join(
         f"<li>第 {s['km']} 公里：坡度 {s['grade']*100:+.0f}%，實際較模型慢 {s['delta_s']} 秒。</li>"
         for s in worst)
@@ -354,13 +420,15 @@ footer{{margin:48px 40px 0;padding:18px 0 40px;border-top:1px solid var(--line);
 <ul>{"".join(f"<li>{n}</li>" for n in notes)}</ul>
 
 <h2>路線與地形</h2>
-<p class="sub">路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。模型依本人坡度與速度關係推算。</p>
-{map_block(gj)}
+<p class="sub" id="mapsub">路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。模型依本人坡度與速度關係推算。</p>
+{map_block(gj, has_dtm)}
 
 <h2>分段表現</h2>
 <p class="sub">各公里相對模型之時間差；紅色表示該段耗時高於模型預期。</p>
 {svg_profile(segs)}
 <p class="hint">上柱＝慢於模型，下柱＝快於模型；最大差距 {max(abs(x['delta_s']) for x in segs)} 秒。</p>
+
+{terrain_block}
 
 <h2>待改善路段</h2>
 <ul>{worst_li}</ul>
@@ -387,6 +455,7 @@ def main():
     ap.add_argument("fit")
     ap.add_argument("--profile", default="profile.json")
     ap.add_argument("--out", default="report.html")
+    ap.add_argument("--dtm", help="Esri ASCII bare-earth DTM (adds terrain ruggedness)")
     a = ap.parse_args()
 
     prof = json.load(open(a.profile))
@@ -399,8 +468,9 @@ def main():
     segs, table = km_segments(recs)
     rep["decoupling_pct"] = core.decoupling(core.thirds(recs))
 
-    gj = route_features(recs, table)
-    out = build(rep, prof, segs, gj)
+    asc = core.load_asc(a.dtm) if a.dtm else None
+    gj = route_features(recs, table, asc=asc)
+    out = build(rep, prof, segs, gj, asc is not None)
     open(a.out, "w", encoding="utf-8").write(out)
     print(f"wrote {a.out} ({len(out)/1024:.0f} KB) · {len(segs)} km · "
           f"{len(gj['features'])} route segments")

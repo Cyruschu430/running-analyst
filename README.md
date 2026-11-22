@@ -184,6 +184,7 @@ ASCII Grid, metres.
 ```bash
 python test_running_analyst.py   # invariants of the maths
 python test_mock_users.py        # five mock athletes end-to-end
+python report_html.py act.fit --profile profile.json --dtm dtm.asc --out report.html
 ```
 
 The mock suite feeds five synthetic but self-consistent athletes (and one

@@ -96,6 +96,7 @@ The order matters: **course first** (what the race demands), **history second**
 
 ```bash
 python report_html.py activity.fit --profile profile.json --out report.html
+python report_html.py activity.fit --profile profile.json --dtm dtm.asc --out report.html
 python report.py activity.fit --gpx course.gpx --json metrics.json
 python test_running_analyst.py          # proves the maths still holds
 python test_mock_users.py               # five mock athletes end-to-end + broken data
@@ -136,6 +137,8 @@ athlete — only a real file can.
 - Route map — colour is *time lost vs the athlete's own model*, not raw speed.
 - `分段表現` — per-km actual vs model; the red bars are the answer to "where".
 - `訓練建議` — one or two rules-generated actions, not a plan.
+- `地形粗糙度` — only with `--dtm`: TRI per 100 m bin, and whether roughness
+  explains the time loss. The map gets a colour toggle (time delta ⇄ TRI).
 - Plan PDF — cover (warnings, glossary), one page per week, nutrition page,
   strength page. Every number comes from `plan.json`; the text adds nothing.
 
