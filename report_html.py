@@ -248,7 +248,7 @@ def map_block(geojson, has_dtm=False, dem_tiles=None):
                 "地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS'")
         dem_js = ""
     return f"""
-<div id="map"></div>
+<div id="map"><div class="legend" aria-hidden="true"><span>快</span><i></i><span>慢</span></div></div>
 <div class="mapctl">
   <button id="pbtn">▶ 播放</button>
   <button id="t3d">切換 3D 地形</button>
@@ -257,15 +257,16 @@ def map_block(geojson, has_dtm=False, dem_tiles=None):
   <span class="hint">點擊路線查看分段數據</span>
 </div>
 <div class="scrubwrap">
-  <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="拖動查看分段">
+<input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="拖動查看分段">
   <span id="seg" class="seg">0.0 km</span>
 </div>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script>
 const ROUTE = {gj};
+// smooth ramp: 72% of 100 m bins sit inside ±5 s, so banded colours read as "all grey"
 const BY_DELTA = ['interpolate', ['linear'], ['get', 'delta'],
-                  -30, '#1e8449', -5, '#27ae60', 5, '#95a5a6', 20, '#e67e22', 45, '#c0392b'];
+                  -12, '#0f7a3d', -4, '#63b86b', 0, '#d8d8d4', 4, '#e8a33d', 12, '#b3261e'];
 const BY_TRI = ['case', ['has', 'tri'],
                 ['interpolate', ['linear'], ['get', 'tri'],
                  0, '#1e8449', 1, '#f1c40f', 2.5, '#c0392b'], '#8794a3'];
@@ -287,18 +288,21 @@ const map = new maplibregl.Map({{
       dot: {{ type: 'geojson', data: {{ type: 'FeatureCollection', features: [] }} }}
     }},
     layers: [
-      {{ id: 'bg', type: 'background', paint: {{ 'background-color': '#0d141c' }} }},
+      {{ id: 'bg', type: 'background', paint: {{ 'background-color': '#e9e5dd' }} }},
       {{ id: 'esri', type: 'raster', source: 'esri',
          paint: {{ 'raster-opacity': 1 }} }},
       {{ id: 'hill', type: 'hillshade', source: 'dem',
          paint: {{ 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff',
                    'hillshade-accent-color': '#243447', 'hillshade-exaggeration': 0.25 }} }},
-      {{ id: 'glow', type: 'line', source: 'route',
-         paint: {{ 'line-color': '#ffffff', 'line-width': 8, 'line-blur': 7, 'line-opacity': 0.15 }} }},
+      {{ id: 'casing', type: 'line', source: 'route',
+         layout: {{ 'line-join': 'round', 'line-cap': 'round' }},
+         paint: {{ 'line-color': '#ffffff', 'line-opacity': 0.92,
+                   'line-width': ['interpolate', ['linear'], ['zoom'], 9, 5.5, 12, 8.5, 15, 14] }} }},
       {{ id: 'route', type: 'line', source: 'route',
+         layout: {{ 'line-join': 'round', 'line-cap': 'round' }},
          paint: {{
-           'line-width': 3.2, 'line-opacity': 0.95,
-           'line-color': BY_DELTA
+           'line-color': BY_DELTA,
+           'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.2, 12, 5.6, 15, 10]
          }} }},
       {{ id: 'dot-glow', type: 'circle', source: 'dot',
          paint: {{ 'circle-radius': 16, 'circle-color': '#E8590C', 'circle-opacity': 0.22, 'circle-blur': 1 }} }},
@@ -312,6 +316,27 @@ const map = new maplibregl.Map({{
 }});
 map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'bottom-right');
 window.__map = map;   // ponytail: lets a debugger/report script move the camera
+map.on('error', e => {{ (window.__maperr = window.__maperr || []).push(String((e && e.error) || e)); }});
+// ponytail: DOM markers, not symbol layers — no glyph server needed offline
+const pin = (coords, cls, text) => {{
+  const el = document.createElement('div');
+  el.className = 'mpin ' + cls;
+  el.textContent = text;
+  new maplibregl.Marker({{ element: el, anchor: 'center' }}).setLngLat(coords).addTo(map);
+}};
+(() => {{
+  const feats = ROUTE.features;
+  if (feats.length < 2) return;
+  let next = 5;   // bins drift (4.94, 5.07…), so label the first bin past each mark
+  feats.forEach(f => {{
+    if (f.properties.km >= next) {{ pin(f.geometry.coordinates[0], 'km', next + ' km'); next += 5; }}
+  }});
+  pin(feats[0].geometry.coordinates[0], 'start', '起點');
+  pin(feats[feats.length - 1].geometry.coordinates.slice(-1)[0], 'finish', '終點');
+  const b = new maplibregl.LngLatBounds();
+  feats.forEach(f => f.geometry.coordinates.forEach(c => b.extend(c)));
+  map.fitBounds(b, {{ padding: 56, duration: 0, maxZoom: 14 }});
+}})();
 const tbtn = document.getElementById('tmode');
 if (tbtn) {{
   const sub = document.getElementById('mapsub');
@@ -442,6 +467,18 @@ document.getElementById('t3d').onclick = e => {{
   }};
   apply(12);
 }};
+// deep link: #lat,lon,zoom,pitch opens the map on one spot (and turns terrain on)
+if (location.hash.length > 1) {{
+  const [la, lo, z, p] = location.hash.slice(1).split(',').map(Number);
+  if (isFinite(la) && isFinite(lo)) {{
+    const go = () => {{
+      map.jumpTo({{ center: [lo, la], zoom: z || 12, pitch: p || 0 }});
+      if (p) {{ try {{ map.setTerrain({{ source: 'dem', exaggeration: 1.5 }}); }} catch (e) {{}} }}
+    }};
+    map.once('load', go); setTimeout(go, 2500);
+  }}
+}}
+
 map.on('click', 'route', ev => {{
   const p = ev.features[0].properties;
   new maplibregl.Popup({{ closeButton: false }})
@@ -562,12 +599,22 @@ button{{font:inherit;font-size:12px;letter-spacing:.06em;text-transform:uppercas
 button:hover{{background:var(--ink);color:var(--paper)}}
 .hint{{font-size:11.5px;color:var(--dim);letter-spacing:.02em}}
 .scrubwrap{{display:flex;align-items:center;gap:14px;margin-top:14px}}
+.legend{{position:absolute;z-index:2;left:12px;bottom:64px;display:flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,.92);border:1px solid rgba(12,15,20,.12);border-radius:999px;
+  padding:4px 10px;font:600 10px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:#0C0F14;box-shadow:0 1px 4px rgba(0,0,0,.15);pointer-events:none}}
+.legend i{{display:block;width:70px;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,#0f7a3d,#63b86b,#d8d8d4,#e8a33d,#b3261e)}}
 #scrub{{-webkit-appearance:none;appearance:none;flex:1;height:2px;background:var(--line);
  outline:none;cursor:pointer}}
 #scrub::-webkit-slider-thumb{{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
  background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent)}}
 #scrub::-moz-range-thumb{{width:12px;height:12px;border-radius:50%;background:var(--accent);
  border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent)}}
+.mpin{{font:600 11px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:#0C0F14;background:#fff;border:1px solid rgba(12,15,20,.16);border-radius:999px;
+  padding:1px 7px;box-shadow:0 1px 4px rgba(0,0,0,.18);white-space:nowrap}}
+.mpin.start,.mpin.finish{{background:#0C0F14;color:#fff;border-color:#0C0F14;letter-spacing:.02em}}
 .seg{{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;min-width:250px;
  letter-spacing:.01em}}
 .gloss{{margin:6px 0 0;font-size:13px;line-height:1.65}}
