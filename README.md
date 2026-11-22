@@ -183,7 +183,13 @@ gdalwarp -t_srs EPSG:4326 -tr 0.0000272 0.0000272 -r bilinear -te 114.100 22.300
 gdal_translate -of AAIGrid dtm.tif dtm.asc   # square cells → plain CELLSIZE header
 ```
 
-To put that DTM under the 3D view instead of the public 30 m tiles:
+The 3D view can also run on a void-free HK DEM: bake LandsD's 5 m territory-wide
+DTM at zoom 12 (48 tiles, 2.6 MB) and every tile in Hong Kong comes from the
+same source, so SRTM's −2,935 m holes at places like Sha Tin station cannot
+appear. Verified against the source grid: Sha Tin station 9.2 m, Tai Mo Shan
+927.5 m.
+
+To put a DTM under the 3D view instead of the public 30 m tiles:
 
 ```bash
 python bake_dem.py dtm.asc --bbox 114.100 22.300 114.200 22.400 --zoom 12 14 --out dem_tiles.json

@@ -237,7 +237,7 @@ def map_block(geojson, has_dtm=False, dem_tiles=None):
     mode_btn = '<button id="tmode">切換上色</button>' if has_dtm else ""
     if dem_tiles:
         dem_url = "'lidar://{z}/{x}/{y}'"
-        dem_maxz = 14
+        dem_maxz = max(int(k.split("/")[0]) for k in dem_tiles)
         attr = ("'底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · "
                 "地形 土木工程拓展署 LiDAR DTM 2020（3 m，內嵌）· MapLibre GL JS'")
         dem_js = DEM_JS.replace("__TILES__", json.dumps(dem_tiles))
