@@ -218,10 +218,13 @@ def load_asc(path):
                 continue
             key = parts[0].lower()
             if key in ("ncols", "nrows", "xllcorner", "yllcorner", "cellsize",
-                       "cellsize", "nodata_value", "xllcenter", "yllcenter"):
+                       "dx", "dy", "nodata_value", "xllcenter", "yllcenter"):
                 meta[key] = float(parts[1])
             else:
                 rows.append([float(v) for v in parts])
+    # GDAL writes dx/dy instead of cellsize; the grid is square enough to average
+    if "cellsize" not in meta and ("dx" in meta or "dy" in meta):
+        meta["cellsize"] = meta.get("dx", meta.get("dy"))
     if "xllcenter" in meta:
         meta["xllcorner"] = meta["xllcenter"] - meta["cellsize"] / 2
     if "yllcenter" in meta:
@@ -234,9 +237,11 @@ def load_asc(path):
 def tri_at(asc, lat, lon):
     """Riley (1999) terrain ruggedness index at one cell: RMS of the 8 neighbour
     differences. Metres, so it reads directly against climb and distance."""
-    cell, rows = asc["cellsize"], asc["rows"]
-    col = int((lon - asc["xllcorner"]) / cell)
-    row = len(rows) - 1 - int((lat - asc["yllcorner"]) / cell)
+    rows = asc["rows"]
+    cx = asc.get("dx") or asc["cellsize"]      # degrees of longitude per cell
+    cy = asc.get("dy") or asc["cellsize"]      # degrees of latitude per cell
+    col = int((lon - asc["xllcorner"]) / cx)
+    row = len(rows) - 1 - int((lat - asc["yllcorner"]) / cy)
     if not (1 <= row < len(rows) - 1 and 1 <= col < len(rows[0]) - 1):
         return None
     z = rows[row][col]

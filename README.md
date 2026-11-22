@@ -156,6 +156,29 @@ skips the intensity judgement rather than guessing an absolute bpm.
 Sensor assumptions, method limits and what the tool refuses to do:
 `references/limits.md`. Roadmap (sensors, cohort modelling): `ROADMAP.md`.
 
+## Terrain index (DTM)
+
+`--dtm file.asc` adds `terrain_index_m` per 100 m bin: Riley (1999) TRI, the RMS
+of the 8-neighbour elevation difference in metres. It needs a bare-earth DTM;
+without one the column is absent rather than zero.
+
+For Hong Kong the most accurate free source is the **CEDD LiDAR DTM 2020**
+(0.5 m, helicopter survey 2019–20) on CSDI dataset
+`cedd_rcd_1629267205233_87895` — roughly ten times finer than the LandsD 5 m
+DTM, which also carries elevated roads and bridges as terrain. Tiles are
+750 x 600 m GeoTIFFs in HK1980 Grid:
+
+```bash
+# tiles intersecting a bbox, then mosaic → WGS84 → Esri ASCII
+curl -s "https://portal.csdi.gov.hk/server/rest/services/common/cedd_rcd_1629267205233_87895/MapServer/0/query?where=1=1&geometry={bbox}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=URL&returnGeometry=false&f=json"
+gdalbuildvrt all.vrt *.tif
+gdalwarp -t_srs EPSG:4326 -tr 0.0000292 0.0000270 -r bilinear -te 114.100 22.300 114.200 22.400 all.vrt dtm.tif
+gdal_translate -of AAIGrid dtm.tif dtm.asc
+```
+
+Outside Hong Kong, any bare-earth DEM works: export WGS84, one band, Esri
+ASCII Grid, metres.
+
 ## Tests
 
 ```bash

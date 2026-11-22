@@ -103,7 +103,11 @@ def assessment(rep, prof):
         pct = rep["avg_hr"] / lthr * 100
         tone = "中高強度；不宜以輕鬆長課視之" if pct >= 85 else \
                "中等強度" if pct >= 75 else "偏低強度，屬恢復或基礎課"
-        out.append("本次訓練平均心率 %d bpm，為乳酸閾值的 %.0f%%（%s）。" % (rep["avg_hr"], pct, tone))
+        note = "；LTHR 為估算值" if prof.get("lthr_basis") else ""
+        out.append("本次訓練平均心率 %d bpm，為乳酸閾值的 %.0f%%（%s）%s。"
+                   % (rep["avg_hr"], pct, tone, note))
+        if prof.get("lthr_basis"):
+            out.append("LTHR 依據：%s。" % prof["lthr_basis"])
     elif rep["avg_hr"]:
         # ponytail: no LTHR in the profile -> say so instead of guessing an absolute bpm
         out.append("未設定乳酸閾值（LTHR），本節不作強度判斷；於 profile 加入 lthr 後即可按百分比評估。")
