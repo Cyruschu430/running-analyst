@@ -1,0 +1,13 @@
+# personal data — never commit
+*.fit
+*.gpx
+*.kml
+profile.json
+out/
+*.html
+!examples/*.html
+__pycache__/
+.venv/
+
+# fetched, not source
+assets/exercise/

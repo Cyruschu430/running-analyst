@@ -1,0 +1,46 @@
+{
+  "athlete": "Your Name",
+  "goal": "ultra_trail",
+  "event": "Target Race",
+  "event_date": "2027-01-23",
+  "distance_km": 96,
+  "d_plus_m": 5142,
+  "target_hours": 16,
+  "weekly_hours": 8,
+  "sensors": [
+    "watch",
+    "baro"
+  ],
+  "lthr": 170,
+  "age": 27,
+  "sex": "male",
+  "health": {
+    "conditions": [],
+    "current_pain": ""
+  },
+  "schedule": {
+    "work_days": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "work_hours": "09:00-18:00",
+    "weekday_max_minutes": 75,
+    "long_day": "Sun"
+  },
+  "home": {
+    "area": "Your Area",
+    "lat": 22.3193,
+    "lon": 114.1694
+  },
+  "training_hills": [
+    "Your local hill"
+  ],
+  "current": {
+    "longest_run_h": 2.3,
+    "weekly_km": 35,
+    "projected_hours": 13.9
+  }
+}
