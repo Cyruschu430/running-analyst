@@ -195,6 +195,13 @@ box at z12–14); anything outside them falls back to the public tiles at
 runtime. `bake_dem.py` exists because MapLibre only decodes terrarium/mapbox
 rasters, and Esri World Elevation is LERC.
 
+**TRI depends on cell size.** The same trail scores higher on a 5 m grid than
+on a 3 m one (neighbour differences span more ground), so TRI values are only
+comparable within one resolution. Fix the grid before comparing runs, and say
+which one in the report. Measured here on the same 208 bins: CEDD LiDAR at 3 m
+gives a median of 0.60 m, the LandsD 5 m DTM gives 0.90 m, and the two agree
+per bin at r = 0.54.
+
 Outside Hong Kong, any bare-earth DEM works: export WGS84, one band, Esri
 ASCII Grid, metres.
 
