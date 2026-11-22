@@ -69,7 +69,7 @@ PERSONAS = [
 ]
 
 
-def make_activity(spec, start=(22.320, 114.170)):
+def make_activity(spec, start=(22.200, 114.100)):
     """1 Hz records that satisfy the run spec's distance and climb.
 
     ponytail: fixed 1 Hz, no pauses — enough to exercise every code path, and

@@ -235,8 +235,8 @@ def test_terrain_rows_add_up():
 
 def write_asc(path, n=60, cell=0.000225, func=lambda r, c: 100.0):
     # centred so the synthetic route (22.30 / 114.20) falls inside the grid
-    lines = [f"ncols {n}", f"nrows {n}", "xllcorner 114.100",
-             "yllcorner 22.300", f"cellsize {cell}", "NODATA_value -9999"]
+    lines = [f"ncols {n}", f"nrows {n}", "xllcorner 114.195",
+             "yllcorner 22.295", f"cellsize {cell}", "NODATA_value -9999"]
     for r in range(n):
         lines.append(" ".join(f"{func(r, c):.1f}" for c in range(n)))
     open(path, "w").write("\n".join(lines))
