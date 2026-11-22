@@ -11,3 +11,8 @@ __pycache__/
 
 # fetched, not source
 assets/exercise/
+
+# DEM / DTM artefacts (large, licence varies)
+*.asc
+*.tif
+*.tiff
