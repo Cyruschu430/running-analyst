@@ -172,8 +172,8 @@ DTM, which also carries elevated roads and bridges as terrain. Tiles are
 # tiles intersecting a bbox, then mosaic → WGS84 → Esri ASCII
 curl -s "https://portal.csdi.gov.hk/server/rest/services/common/cedd_rcd_1629267205233_87895/MapServer/0/query?where=1=1&geometry={bbox}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=URL&returnGeometry=false&f=json"
 gdalbuildvrt all.vrt *.tif
-gdalwarp -t_srs EPSG:4326 -tr 0.0000292 0.0000270 -r bilinear -te 114.100 22.300 114.200 22.400 all.vrt dtm.tif
-gdal_translate -of AAIGrid dtm.tif dtm.asc
+gdalwarp -t_srs EPSG:4326 -tr 0.0000272 0.0000272 -r bilinear -te 114.100 22.300 114.200 22.400 all.vrt dtm.tif
+gdal_translate -of AAIGrid dtm.tif dtm.asc   # square cells → plain CELLSIZE header
 ```
 
 Outside Hong Kong, any bare-earth DEM works: export WGS84, one band, Esri
