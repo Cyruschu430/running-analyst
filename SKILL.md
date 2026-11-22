@@ -98,11 +98,25 @@ The order matters: **course first** (what the race demands), **history second**
 python report_html.py activity.fit --profile profile.json --out report.html
 python report.py activity.fit --gpx course.gpx --json metrics.json
 python test_running_analyst.py          # proves the maths still holds
+python test_mock_users.py               # five mock athletes end-to-end + broken data
 ```
 
 `profile.json` carries the goal — `10k_road`, `marathon_road`, `half_trail`,
 `ultra_trail` — plus the target event. The goal changes the benchmark and the
 report's emphasis; the same run is judged differently for a 10K and a 100K.
+
+## Proving it works
+
+`test_mock_users.py` runs five synthetic athletes (10K beginner, sub-4
+marathoner, trail half, ultra, injured) plus a GPS-less/HR-less file through
+the same code a real FIT goes through, and checks that bins reconcile with the
+activity, coordinates land in Hong Kong, plans honour the athlete's available
+days, taper weeks shrink, an injured athlete gets no intensity, and the same
+profile always yields the same plan.
+
+Synthetic ≠ real: it proves the pipeline is internally consistent and does not
+crash on edge cases. It cannot prove the grade→speed model is right for a new
+athlete — only a real file can.
 
 ## Hard rules
 

@@ -156,6 +156,17 @@ skips the intensity judgement rather than guessing an absolute bpm.
 Sensor assumptions, method limits and what the tool refuses to do:
 `references/limits.md`. Roadmap (sensors, cohort modelling): `ROADMAP.md`.
 
+## Tests
+
+```bash
+python test_running_analyst.py   # invariants of the maths
+python test_mock_users.py        # five mock athletes end-to-end
+```
+
+The mock suite feeds five synthetic but self-consistent athletes (and one
+file with no GPS) through the whole pipeline: bin reconciliation, coordinate
+sanity, plan structure, taper, injury gate, nutrition and determinism.
+
 ## Optional assets
 
 ```bash

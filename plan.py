@@ -87,6 +87,8 @@ def strength_cfg(prof):
 def health_gate(prof):
     """Any declared condition or current pain stops intensity prescription."""
     h = prof.get("health") or {}
+    if isinstance(h, str):                 # a plain sentence is a valid answer
+        h = {"current_pain": h}
     flags = [x for x in (h.get("conditions") or []) if x]
     if h.get("current_pain"):
         flags.append(str(h["current_pain"]))

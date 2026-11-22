@@ -186,7 +186,7 @@ def bins_100m(recs, lookup, step=100.0):
             pos_lon += (b[8] - a[8]) * f
             pos_ele += de
             pos_d += take
-            cur["coords"].append([pos_lat, pos_lon])
+            cur["coords"].append([pos_lon, pos_lat])
             if cur["dist"] >= step - 1e-6:
                 out.append(dict(chainage_m=round(pos_d),
                                 length_m=round(cur["dist"], 1),
@@ -196,7 +196,7 @@ def bins_100m(recs, lookup, step=100.0):
                                 delta_s=round(cur["a"] - cur["m"]),
                                 coords=cur["coords"]))
                 cur = dict(a=0.0, m=0.0, dpl=0.0, gs=0.0, dist=0.0,
-                           coords=[[pos_lat, pos_lon]], chain=pos_d)
+                           coords=[[pos_lon, pos_lat]], chain=pos_d)
             left -= take
         i += 1
     if cur["dist"] >= 20 and len(cur["coords"]) >= 2:      # trailing partial bin
@@ -268,7 +268,7 @@ def terrain_rows(recs, table, step=100.0, asc=None, remarks=None):
             class_=("slow" if frac > 0.05 else "fast" if frac < -0.05 else "on-model"))
         if asc:
             mid = b["coords"][len(b["coords"]) // 2]
-            tri = tri_at(asc, mid[0], mid[1])   # mid = [lat, lon]
+            tri = tri_at(asc, mid[1], mid[0])   # coords are [lon, lat]
             row["terrain_index_m"] = round(tri, 1) if tri is not None else ""
         if remarks:
             note = next((r["note"] for r in remarks

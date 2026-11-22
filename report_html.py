@@ -197,6 +197,10 @@ const map = new maplibregl.Map({{
   style: {{
     version: 8,
     sources: {{
+      esri: {{ type: 'raster',
+               tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'],
+               tileSize: 256, maxzoom: 17,
+               attribution: '底圖 © Esri, Maxar, Earthstar Geographics' }},
       dem: {{ type: 'raster-dem',
               tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{{z}}/{{x}}/{{y}}.png'],
               encoding: 'terrarium', tileSize: 256, maxzoom: 15 }},
@@ -204,9 +208,11 @@ const map = new maplibregl.Map({{
     }},
     layers: [
       {{ id: 'bg', type: 'background', paint: {{ 'background-color': '#0d141c' }} }},
+      {{ id: 'esri', type: 'raster', source: 'esri',
+         paint: {{ 'raster-opacity': 0.85, 'raster-saturation': -0.25, 'raster-brightness-max': 0.85 }} }},
       {{ id: 'hill', type: 'hillshade', source: 'dem',
-         paint: {{ 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#64798f',
-                   'hillshade-accent-color': '#243447', 'hillshade-exaggeration': 0.6 }} }},
+         paint: {{ 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff',
+                   'hillshade-accent-color': '#243447', 'hillshade-exaggeration': 0.45 }} }},
       {{ id: 'glow', type: 'line', source: 'route',
          paint: {{ 'line-color': '#ffffff', 'line-width': 8, 'line-blur': 7, 'line-opacity': 0.15 }} }},
       {{ id: 'route', type: 'line', source: 'route',
@@ -218,7 +224,7 @@ const map = new maplibregl.Map({{
     ]
   }},
   center: [114.15, 22.38], zoom: 10, pitch: 0,
-  attributionControl: {{ compact: true, customAttribution: '地形資料：AWS Terrain Tiles（Mapzen）｜MapLibre GL JS' }}
+  attributionControl: {{ compact: true, customAttribution: '底圖 © Esri · 地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS' }}
 }});
 map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'bottom-right');
 const b = new maplibregl.LngLatBounds();
