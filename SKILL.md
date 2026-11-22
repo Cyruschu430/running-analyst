@@ -162,6 +162,7 @@ falls back to line pictograms.
 | `report_html.py` | FIT + profile → single-file HTML with 2D/3D map |
 | `references/sport-science.md` | provenance for every metric |
 | `references/limits.md` | sensor assumptions and what the tool refuses to claim |
+| `bake_dem.py` | bakes a DTM into terrarium tiles for the 3D view |
 | `hr_peak.py` | best 5/20/60-minute heart rate — the input to an LTHR estimate |
 | `ROADMAP.md` | what unlocks with a chest strap / pod / cohort |
 

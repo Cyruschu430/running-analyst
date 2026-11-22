@@ -188,9 +188,31 @@ def svg_profile(segs, w=900, h=190):
             f'{ticks}</svg>')
 
 
-def map_block(geojson, has_dtm=False):
+def map_block(geojson, has_dtm=False, dem_tiles=None):
     gj = json.dumps(geojson, ensure_ascii=False)
     mode_btn = '<button id="tmode">切換上色</button>' if has_dtm else ""
+    if dem_tiles:
+        dem_url = "'lidar://{z}/{x}/{y}'"
+        dem_maxz = 14
+        attr = ("'底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · "
+                "地形 土木工程拓展署 LiDAR DTM 2020（3 m，內嵌）· MapLibre GL JS'")
+        dem_js = ("const DEM_TILES = " + json.dumps(dem_tiles) + ";\n"
+                  "maplibregl.addProtocol('lidar', (params, abort) => new Promise((res, rej) => {\n"
+                  "  const key = params.url.replace('lidar://', '');\n"
+                  "  const b64 = DEM_TILES[key];\n"
+                  "  if (b64) { const bin = atob(b64.slice(b64.indexOf(',') + 1));\n"
+                  "    const buf = new Uint8Array(bin.length);\n"
+                  "    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);\n"
+                  "    res({ data: buf.buffer }); return; }\n"
+                  "  fetch('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + key + '.png')\n"
+                  "    .then(r => r.arrayBuffer()).then(d => res({ data: d })).catch(rej);\n"
+                  "}));")
+    else:
+        dem_url = "'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'"
+        dem_maxz = 15
+        attr = ("'底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · "
+                "地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS'")
+        dem_js = ""
     return f"""
 <div id="map"></div>
 <div class="mapctl">
@@ -199,6 +221,10 @@ def map_block(geojson, has_dtm=False):
   {mode_btn}
   <span class="hint" id="pb">0.0 / 0 km</span>
   <span class="hint">點擊路線查看分段數據</span>
+</div>
+<div class="scrubwrap">
+  <input id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="拖動查看分段">
+  <span id="seg" class="seg">0.0 km</span>
 </div>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -210,6 +236,7 @@ const BY_TRI = ['case', ['has', 'tri'],
                 ['interpolate', ['linear'], ['get', 'tri'],
                  0, '#1e8449', 1, '#f1c40f', 2.5, '#c0392b'], '#8794a3'];
 let cmode = 'delta';
+{dem_js}
 const map = new maplibregl.Map({{
   container: 'map',
   style: {{
@@ -220,8 +247,8 @@ const map = new maplibregl.Map({{
                tileSize: 256, maxzoom: 17,
                attribution: '底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors' }},
       dem: {{ type: 'raster-dem',
-              tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{{z}}/{{x}}/{{y}}.png'],
-              encoding: 'terrarium', tileSize: 256, maxzoom: 15 }},
+              tiles: [{dem_url}],
+              encoding: 'terrarium', tileSize: 256, maxzoom: {dem_maxz} }},
       route: {{ type: 'geojson', data: ROUTE }},
       dot: {{ type: 'geojson', data: {{ type: 'FeatureCollection', features: [] }} }}
     }},
@@ -242,12 +269,12 @@ const map = new maplibregl.Map({{
       {{ id: 'dot-glow', type: 'circle', source: 'dot',
          paint: {{ 'circle-radius': 16, 'circle-color': '#E8590C', 'circle-opacity': 0.22, 'circle-blur': 1 }} }},
       {{ id: 'dot', type: 'circle', source: 'dot',
-         paint: {{ 'circle-radius': 6.5, 'circle-color': '#0C0F14',
-                   'circle-stroke-width': 2.5, 'circle-stroke-color': '#E8590C' }} }}
+         paint: {{ 'circle-radius': 7, 'circle-color': '#E8590C',
+                   'circle-stroke-width': 2.5, 'circle-stroke-color': '#FFFFFF' }} }}
     ]
   }},
   center: [114.15, 22.38], zoom: 10, pitch: 0,
-  attributionControl: {{ compact: true, customAttribution: '底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · 地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS' }}
+  attributionControl: {{ compact: true, customAttribution: {attr} }}
 }});
 map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'bottom-right');
 const tbtn = document.getElementById('tmode');
@@ -269,8 +296,8 @@ if (tbtn) {{
 (() => {{
   const pbtn = document.getElementById('pbtn'), pb = document.getElementById('pb');
   if (!pbtn) return;
-  const path = [];
-  ROUTE.features.forEach(f => f.geometry.coordinates.forEach(c => path.push(c)));
+  const path = [], owner = [];
+  ROUTE.features.forEach((f, k) => f.geometry.coordinates.forEach(c => {{ path.push(c); owner.push(k); }}));
   if (path.length < 2) return;
   const R = 6371000, rad = Math.PI / 180;
   const cum = [0];
@@ -287,27 +314,69 @@ if (tbtn) {{
     while (i < path.length - 1 && cum[i] < d) i++;
     const span = cum[i] - cum[i - 1] || 1, t = (d - cum[i - 1]) / span;
     const a = path[i - 1], b = path[i];
+    const lon = a[0] + (b[0] - a[0]) * t, lat = a[1] + (b[1] - a[1]) * t;
     const src = map.getSource('dot');
-    if (!src) return;
+    if (!src) return null;
     src.setData({{ type: 'FeatureCollection', features: [{{ type: 'Feature',
-      properties: {{}}, geometry: {{ type: 'Point',
-      coordinates: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] }} }}] }});
+      properties: {{}}, geometry: {{ type: 'Point', coordinates: [lon, lat] }} }}] }});
     pb.textContent = (d / 1000).toFixed(1) + ' / ' + (total / 1000).toFixed(0) + ' km';
+    const dlon = (b[0] - a[0]) * Math.cos(lat * rad);
+    return [lon, lat, Math.atan2(dlon, b[1] - a[1]) * 180 / Math.PI];
   }};
+  let brg = null, last = 0;
   const frame = ts => {{
     if (!playing) return;
     elapsed = Math.min(DUR, ts - start);
-    setDot(total * elapsed / DUR);
+    // 10 Hz: terrain re-render per frame saturates the GPU on modest machines
+    if (ts - last >= 100) {{
+      last = ts;
+      const pos = setDot(total * elapsed / DUR);
+      if (pos) {{
+        const h = pos[2];
+        brg = brg === null ? h : brg + ((((h - brg) % 360) + 540) % 360 - 180) * 0.2;
+        map.jumpTo({{ center: [pos[0], pos[1]], bearing: brg, pitch: 58, zoom: 14.2 }});
+      }}
+    }}
     if (elapsed < DUR) requestAnimationFrame(frame);
-    else {{ playing = false; pbtn.textContent = '▶ 播放'; }}
+    else {{ playing = false; pbtn.textContent = '▶ 播放'; stopFollow(); }}
+  }};
+  let saved = null;
+  const startFollow = () => {{
+    saved = {{ center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }};
+    brg = null;
+  }};
+  const stopFollow = () => {{
+    if (!saved) return;
+    map.easeTo({{ center: saved.center, zoom: saved.zoom, pitch: saved.pitch,
+                  bearing: saved.bearing, duration: 900 }});
+    saved = null;
   }};
   pbtn.onclick = () => {{
-    if (playing) {{ playing = false; pbtn.textContent = '▶ 播放'; return; }}
+    if (playing) {{ playing = false; pbtn.textContent = '▶ 播放'; stopFollow(); return; }}
     if (elapsed >= DUR) elapsed = 0;
     start = performance.now() - elapsed;
     playing = true; pbtn.textContent = '⏸ 暫停';
+    startFollow();
     requestAnimationFrame(frame);
   }};
+  const scrub = document.getElementById('scrub'), seg = document.getElementById('seg');
+  const describe = d => {{
+    let i = 1;
+    while (i < path.length - 1 && cum[i] < d) i++;
+    const f = ROUTE.features[owner[i]].properties;
+    const dlt = f.delta > 0 ? '較模型慢 ' + Math.round(f.delta) + ' 秒'
+                            : (f.delta < 0 ? '較模型快 ' + Math.round(-f.delta) + ' 秒' : '與模型一致');
+    return (d / 1000).toFixed(1) + ' km　·　坡度 ' + (f.grade > 0 ? '+' : '') + f.grade
+           + '%　·　' + dlt;
+  }};
+  if (scrub) {{
+    scrub.oninput = () => {{
+      if (playing) {{ playing = false; pbtn.textContent = '▶ 播放'; }}
+      const d = total * scrub.value / 1000;
+      setDot(d);
+      seg.textContent = describe(d);
+    }};
+  }}
   map.once('load', () => setDot(0));
 }})();
 const b = new maplibregl.LngLatBounds();
@@ -362,7 +431,7 @@ def terrain_stats(gj):
                 r_all=r_all, r_down=r_down, n_down=len(down))
 
 
-def build(rep, prof, segs, gj, has_dtm=False):
+def build(rep, prof, segs, gj, has_dtm=False, dem_tiles=None):
     notes, dens, target = assessment(rep, prof)
     worst = sorted(segs, key=lambda s: -s["delta_s"])[:3]
     tips = advice(prof, worst)
@@ -445,6 +514,15 @@ button{{font:inherit;font-size:12px;letter-spacing:.06em;text-transform:uppercas
  cursor:pointer;transition:background .15s,color .15s}}
 button:hover{{background:var(--ink);color:var(--paper)}}
 .hint{{font-size:11.5px;color:var(--dim);letter-spacing:.02em}}
+.scrubwrap{{display:flex;align-items:center;gap:14px;margin-top:14px}}
+#scrub{{-webkit-appearance:none;appearance:none;flex:1;height:2px;background:var(--line);
+ outline:none;cursor:pointer}}
+#scrub::-webkit-slider-thumb{{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+ background:var(--accent);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent)}}
+#scrub::-moz-range-thumb{{width:12px;height:12px;border-radius:50%;background:var(--accent);
+ border:2px solid var(--paper);box-shadow:0 0 0 1px var(--accent)}}
+.seg{{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;min-width:250px;
+ letter-spacing:.01em}}
 .gloss{{margin:6px 0 0;font-size:13px;line-height:1.65}}
 .gloss dt{{font-weight:650;margin:12px 0 2px;color:var(--ink)}}
 .gloss dd{{margin:0;color:#3A424C}}
@@ -483,7 +561,7 @@ footer{{margin:48px 40px 0;padding:18px 0 40px;border-top:1px solid var(--line);
 <h2>路線與地形</h2>
 <p class="sub" id="mapsub">路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。
 模型＝以你本人過往 FIT 記錄擬合的「坡度—速度」關係：同一坡度你平常跑得多快，再逐段換算應需時間。</p>
-{map_block(gj, has_dtm)}
+{map_block(gj, has_dtm, dem_tiles)}
 
 <h2>分段表現</h2>
 <p class="sub">各公里相對模型之時間差；紅色表示該段耗時高於模型預期。</p>
@@ -536,6 +614,7 @@ def main():
     ap.add_argument("--profile", default="profile.json")
     ap.add_argument("--out", default="report.html")
     ap.add_argument("--dtm", help="Esri ASCII bare-earth DTM (adds terrain ruggedness)")
+    ap.add_argument("--dem-tiles", help="baked terrarium tiles (bake_dem.py) for the 3D view")
     a = ap.parse_args()
 
     prof = json.load(open(a.profile))
@@ -550,7 +629,8 @@ def main():
 
     asc = core.load_asc(a.dtm) if a.dtm else None
     gj = route_features(recs, table, asc=asc)
-    out = build(rep, prof, segs, gj, asc is not None)
+    dem = json.load(open(a.dem_tiles)) if a.dem_tiles else None
+    out = build(rep, prof, segs, gj, asc is not None, dem)
     open(a.out, "w", encoding="utf-8").write(out)
     print(f"wrote {a.out} ({len(out)/1024:.0f} KB) · {len(segs)} km · "
           f"{len(gj['features'])} route segments")

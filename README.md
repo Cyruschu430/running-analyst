@@ -183,6 +183,18 @@ gdalwarp -t_srs EPSG:4326 -tr 0.0000272 0.0000272 -r bilinear -te 114.100 22.300
 gdal_translate -of AAIGrid dtm.tif dtm.asc   # square cells → plain CELLSIZE header
 ```
 
+To put that DTM under the 3D view instead of the public 30 m tiles:
+
+```bash
+python bake_dem.py dtm.asc --bbox 114.100 22.300 114.200 22.400 --zoom 12 14 --out dem_tiles.json
+python report_html.py act.fit --profile profile.json --dtm dtm.asc --dem-tiles dem_tiles.json --out report.html
+```
+
+Tiles are terrarium-encoded PNGs embedded in the HTML (about 1.7 MB for a 5 km
+box at z12–14); anything outside them falls back to the public tiles at
+runtime. `bake_dem.py` exists because MapLibre only decodes terrarium/mapbox
+rasters, and Esri World Elevation is LERC.
+
 Outside Hong Kong, any bare-earth DEM works: export WGS84, one band, Esri
 ASCII Grid, metres.
 
