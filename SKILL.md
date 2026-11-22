@@ -137,8 +137,11 @@ athlete — only a real file can.
 - Route map — colour is *time lost vs the athlete's own model*, not raw speed.
 - `分段表現` — per-km actual vs model; the red bars are the answer to "where".
 - `訓練建議` — one or two rules-generated actions, not a plan.
+- `名詞解釋` — LTHR, model, TRI, p90, r, decoupling, climb density, in plain
+  language; every report ships it.
 - `地形粗糙度` — only with `--dtm`: TRI per 100 m bin, and whether roughness
-  explains the time loss. The map gets a colour toggle (time delta ⇄ TRI).
+  explains the time loss. The map gets a colour toggle (time delta ⇄ TRI), a playback dot, a topographic
+basemap and 2D/3D terrain.
 - Plan PDF — cover (warnings, glossary), one page per week, nutrition page,
   strength page. Every number comes from `plan.json`; the text adds nothing.
 

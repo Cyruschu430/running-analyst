@@ -107,13 +107,14 @@ def assessment(rep, prof):
         tone = "中高強度；不宜以輕鬆長課視之" if pct >= 85 else \
                "中等強度" if pct >= 75 else "偏低強度，屬恢復或基礎課"
         note = "；LTHR 為估算值" if prof.get("lthr_basis") else ""
-        out.append("本次訓練平均心率 %d bpm，為乳酸閾值的 %.0f%%（%s）%s。"
+        out.append("本次訓練平均心率 %d bpm，為乳酸閾值心率"
+                   "（Lactate Threshold Heart Rate，LTHR）的 %.0f%%（%s）%s。"
                    % (rep["avg_hr"], pct, tone, note))
         if prof.get("lthr_basis"):
             out.append("LTHR 依據：%s。" % prof["lthr_basis"])
     elif rep["avg_hr"]:
         # ponytail: no LTHR in the profile -> say so instead of guessing an absolute bpm
-        out.append("未設定乳酸閾值（LTHR），本節不作強度判斷；於 profile 加入 lthr 後即可按百分比評估。")
+        out.append("未設定乳酸閾值心率（Lactate Threshold Heart Rate，LTHR），本節不作強度判斷；於 profile 加入 lthr 後即可按百分比評估。")
     if ratio < 0.7:
         out.append("爬升密度為 %.0f m/km，僅達%s %.0f m/km 的 %.0f%%，比賽特異性不足。"
                    % (dens, basis, target, ratio * 100))
@@ -193,8 +194,10 @@ def map_block(geojson, has_dtm=False):
     return f"""
 <div id="map"></div>
 <div class="mapctl">
+  <button id="pbtn">▶ 播放</button>
   <button id="t3d">切換 3D 地形</button>
   {mode_btn}
+  <span class="hint" id="pb">0.0 / 0 km</span>
   <span class="hint">點擊路線查看分段數據</span>
 </div>
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -213,39 +216,46 @@ const map = new maplibregl.Map({{
     version: 8,
     sources: {{
       esri: {{ type: 'raster',
-               tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'],
+               tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{{z}}/{{y}}/{{x}}'],
                tileSize: 256, maxzoom: 17,
-               attribution: '底圖 © Esri, Maxar, Earthstar Geographics' }},
+               attribution: '底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors' }},
       dem: {{ type: 'raster-dem',
               tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{{z}}/{{x}}/{{y}}.png'],
               encoding: 'terrarium', tileSize: 256, maxzoom: 15 }},
-      route: {{ type: 'geojson', data: ROUTE }}
+      route: {{ type: 'geojson', data: ROUTE }},
+      dot: {{ type: 'geojson', data: {{ type: 'FeatureCollection', features: [] }} }}
     }},
     layers: [
       {{ id: 'bg', type: 'background', paint: {{ 'background-color': '#0d141c' }} }},
       {{ id: 'esri', type: 'raster', source: 'esri',
-         paint: {{ 'raster-opacity': 0.85, 'raster-saturation': -0.25, 'raster-brightness-max': 0.85 }} }},
+         paint: {{ 'raster-opacity': 1 }} }},
       {{ id: 'hill', type: 'hillshade', source: 'dem',
          paint: {{ 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#ffffff',
-                   'hillshade-accent-color': '#243447', 'hillshade-exaggeration': 0.45 }} }},
+                   'hillshade-accent-color': '#243447', 'hillshade-exaggeration': 0.25 }} }},
       {{ id: 'glow', type: 'line', source: 'route',
          paint: {{ 'line-color': '#ffffff', 'line-width': 8, 'line-blur': 7, 'line-opacity': 0.15 }} }},
       {{ id: 'route', type: 'line', source: 'route',
          paint: {{
            'line-width': 3.2, 'line-opacity': 0.95,
            'line-color': BY_DELTA
-         }} }}
+         }} }},
+      {{ id: 'dot-glow', type: 'circle', source: 'dot',
+         paint: {{ 'circle-radius': 16, 'circle-color': '#E8590C', 'circle-opacity': 0.22, 'circle-blur': 1 }} }},
+      {{ id: 'dot', type: 'circle', source: 'dot',
+         paint: {{ 'circle-radius': 6.5, 'circle-color': '#0C0F14',
+                   'circle-stroke-width': 2.5, 'circle-stroke-color': '#E8590C' }} }}
     ]
   }},
   center: [114.15, 22.38], zoom: 10, pitch: 0,
-  attributionControl: {{ compact: true, customAttribution: '底圖 © Esri · 地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS' }}
+  attributionControl: {{ compact: true, customAttribution: '底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · 地形 AWS Terrain Tiles（Mapzen）· MapLibre GL JS' }}
 }});
 map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'bottom-right');
 const tbtn = document.getElementById('tmode');
 if (tbtn) {{
   const sub = document.getElementById('mapsub');
   const TXT = {{
-    delta: '路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。模型依本人坡度與速度關係推算。',
+    delta: '路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。'
+           + '模型＝以你本人過往 FIT 記錄擬合的「坡度—速度」關係：同一坡度你平常跑得多快，再逐段換算應需時間。',
     tri: '路線按地形粗糙度（TRI）上色：綠色平坦、黃色中等、紅色崎嶇（3 m LiDAR DTM）。'
   }};
   tbtn.onclick = () => {{
@@ -254,6 +264,52 @@ if (tbtn) {{
     sub.textContent = TXT[cmode];
   }};
 }}
+
+// playback: a dot sweeping the course in 30 s
+(() => {{
+  const pbtn = document.getElementById('pbtn'), pb = document.getElementById('pb');
+  if (!pbtn) return;
+  const path = [];
+  ROUTE.features.forEach(f => f.geometry.coordinates.forEach(c => path.push(c)));
+  if (path.length < 2) return;
+  const R = 6371000, rad = Math.PI / 180;
+  const cum = [0];
+  for (let i = 1; i < path.length; i++) {{
+    const a = path[i - 1], b = path[i];
+    const dla = (b[1] - a[1]) * rad, dlo = (b[0] - a[0]) * rad;
+    const la = (a[1] + b[1]) / 2 * rad;
+    cum.push(cum[i - 1] + R * Math.hypot(dla, dlo * Math.cos(la)));
+  }}
+  const total = cum[cum.length - 1], DUR = 30000;
+  let playing = false, elapsed = 0, start = 0;
+  const setDot = d => {{
+    let i = 1;
+    while (i < path.length - 1 && cum[i] < d) i++;
+    const span = cum[i] - cum[i - 1] || 1, t = (d - cum[i - 1]) / span;
+    const a = path[i - 1], b = path[i];
+    const src = map.getSource('dot');
+    if (!src) return;
+    src.setData({{ type: 'FeatureCollection', features: [{{ type: 'Feature',
+      properties: {{}}, geometry: {{ type: 'Point',
+      coordinates: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] }} }}] }});
+    pb.textContent = (d / 1000).toFixed(1) + ' / ' + (total / 1000).toFixed(0) + ' km';
+  }};
+  const frame = ts => {{
+    if (!playing) return;
+    elapsed = Math.min(DUR, ts - start);
+    setDot(total * elapsed / DUR);
+    if (elapsed < DUR) requestAnimationFrame(frame);
+    else {{ playing = false; pbtn.textContent = '▶ 播放'; }}
+  }};
+  pbtn.onclick = () => {{
+    if (playing) {{ playing = false; pbtn.textContent = '▶ 播放'; return; }}
+    if (elapsed >= DUR) elapsed = 0;
+    start = performance.now() - elapsed;
+    playing = true; pbtn.textContent = '⏸ 暫停';
+    requestAnimationFrame(frame);
+  }};
+  map.once('load', () => setDot(0));
+}})();
 const b = new maplibregl.LngLatBounds();
 ROUTE.features.forEach(f => f.geometry.coordinates.forEach(c => b.extend(c)));
 map.fitBounds(b, {{ padding: 40, pitch: 45, bearing: -18, duration: 0 }});
@@ -328,9 +384,10 @@ def build(rep, prof, segs, gj, has_dtm=False):
             f'<h2>地形粗糙度</h2>\n'
             f'<p class="sub">TRI：每個像素與 8 個鄰居高差的 RMS（Riley 1999），'
             f'以 LiDAR 派生 3 m 裸地 DTM 計算。</p>\n'
-            f'<ul><li>{ts["n"]} 段：中位數 {ts["median"]:.2f} m、p90 {ts["p90"]:.2f} m、'
+            f'<ul><li>{ts["n"]} 段：中位數 {ts["median"]:.2f} m、第 90 百分位（p90，九成路段低於此值）{ts["p90"]:.2f} m、'
             f'最大 {ts["mx"]:.2f} m。</li>'
-            f'<li>與時間損失的相關性：全段 r = {ts["r_all"]:+.2f}；'
+            f'<li>與時間損失的相關性（皮爾森 r：+1 表示完全同步、0 表示無關、'
+            f'−1 表示完全反向）：全段 r = {ts["r_all"]:+.2f}；'
             + (f'落坡段（{ts["n_down"]} 段）r = {ts["r_down"]:+.2f}。' if ts["r_down"] is not None
                else "落坡段數據不足。")
             + f'</li><li>{verdict}</li></ul>\n')
@@ -344,22 +401,23 @@ def build(rep, prof, segs, gj, has_dtm=False):
 <title>Running Analyst｜{prof['event']}</title>
 <style>
 :root{{--ink:#0C0F14;--paper:#FBFAF7;--dim:#6C7480;--line:#E2DFD8;
- --volt:#D8FF3E;--accent-ink:#6E7A12;--bad:#B3261E;--good:#1B6B3A}}
+ --accent:#E8590C;--blue:#1B4D8F;--bad:#B3261E;--good:#1B6B3A}}
 *{{box-sizing:border-box}}
 html{{background:#E8E6E0}}
 body{{margin:0 auto;max-width:1040px;background:var(--paper);color:var(--ink);
  font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",system-ui,sans-serif;
  -webkit-font-smoothing:antialiased}}
-.hero{{background:var(--ink);color:#F7F5F0;padding:34px 40px 30px}}
-.brand{{font-size:10px;letter-spacing:.30em;text-transform:uppercase;color:#9AA3AE;
+.hero{{background:var(--paper);color:var(--ink);padding:34px 40px 26px;
+ border-bottom:1px solid var(--ink)}}
+.brand{{font-size:10px;letter-spacing:.30em;text-transform:uppercase;color:var(--dim);
  display:flex;align-items:center;gap:10px}}
-.brand::before{{content:"";width:26px;height:3px;background:var(--volt);display:inline-block}}
+.brand::before{{content:"";width:26px;height:3px;background:var(--accent);display:inline-block}}
 h1{{font-size:34px;line-height:1.15;font-weight:600;letter-spacing:-.02em;margin:14px 0 8px}}
-.sub{{color:#A8B0BA;font-size:12.5px;letter-spacing:.02em}}
+.sub{{color:var(--dim);font-size:12.5px;letter-spacing:.02em}}
 .kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
  gap:0;margin:26px 40px 0;border-top:1px solid var(--line)}}
 .kpi{{padding:16px 18px 14px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}}
-.kpi:first-child{{padding-left:0;border-left:3px solid var(--volt)}}
+.kpi:first-child{{padding-left:0;border-left:3px solid var(--accent)}}
 .kpi:first-child b{{font-size:34px}}
 .kpi:nth-child(6n){{border-right:none}}
 .kpi b{{display:block;font-size:27px;font-weight:600;letter-spacing:-.03em;
@@ -372,21 +430,24 @@ h2{{display:flex;align-items:baseline;gap:12px;font-size:11px;font-weight:650;
  letter-spacing:.18em;text-transform:uppercase;color:var(--dim);
  margin:38px 0 14px;padding-bottom:0}}
 h2::before{{counter-increment:sec;content:counter(sec,decimal-leading-zero);
- font-size:10px;letter-spacing:.06em;color:var(--accent-ink);
+ font-size:10px;letter-spacing:.06em;color:var(--blue);
  font-variant-numeric:tabular-nums;font-weight:700}}
 h2::after{{content:"";flex:1;height:1px;background:var(--line);transform:translateY(-3px)}}
 ul{{margin:12px 0;padding-left:0;list-style:none}}
 li{{position:relative;padding-left:18px;margin:9px 0;color:#20262E}}
 li::before{{content:"";position:absolute;left:0;top:.62em;width:6px;height:6px;
- background:var(--accent-ink);border-radius:50%}}
+ background:var(--blue);border-radius:50%}}
 #map{{height:460px;border-radius:2px;overflow:hidden;border:1px solid #11151B;
- border-top:3px solid var(--volt);box-shadow:0 18px 40px -26px rgba(12,15,20,.55)}}
+ border-top:3px solid var(--accent);box-shadow:0 18px 40px -26px rgba(12,15,20,.35)}}
 .mapctl{{display:flex;align-items:center;gap:12px;margin-top:12px}}
 button{{font:inherit;font-size:12px;letter-spacing:.06em;text-transform:uppercase;
  padding:8px 16px;border:1px solid var(--ink);border-radius:0;background:transparent;
  cursor:pointer;transition:background .15s,color .15s}}
-button:hover{{background:var(--ink);color:var(--volt)}}
+button:hover{{background:var(--ink);color:var(--paper)}}
 .hint{{font-size:11.5px;color:var(--dim);letter-spacing:.02em}}
+.gloss{{margin:6px 0 0;font-size:13px;line-height:1.65}}
+.gloss dt{{font-weight:650;margin:12px 0 2px;color:var(--ink)}}
+.gloss dd{{margin:0;color:#3A424C}}
 table{{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}}
 th,td{{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}}
 th:first-child,td:first-child{{text-align:left}}
@@ -420,7 +481,8 @@ footer{{margin:48px 40px 0;padding:18px 0 40px;border-top:1px solid var(--line);
 <ul>{"".join(f"<li>{n}</li>" for n in notes)}</ul>
 
 <h2>路線與地形</h2>
-<p class="sub" id="mapsub">路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。模型依本人坡度與速度關係推算。</p>
+<p class="sub" id="mapsub">路線依「實際與模型之時間差」著色：紅為較慢，綠為較快。
+模型＝以你本人過往 FIT 記錄擬合的「坡度—速度」關係：同一坡度你平常跑得多快，再逐段換算應需時間。</p>
 {map_block(gj, has_dtm)}
 
 <h2>分段表現</h2>
@@ -440,6 +502,24 @@ footer{{margin:48px 40px 0;padding:18px 0 40px;border-top:1px solid var(--line);
 
 <h2>訓練建議</h2>
 <ul>{"".join(f"<li>{t}</li>" for t in tips)}</ul>
+
+<h2>名詞解釋</h2>
+<dl class="gloss">
+<dt>LTHR（Lactate Threshold Heart Rate，乳酸閾值心率）</dt>
+<dd>身體由「可持續」轉為「快速累積乳酸」的分界心率。低於此值可長時間維持；高於此值只能撐數十分鐘。本報告用它換算每次訓練的相對強度。</dd>
+<dt>模型（坡度—速度模型）</dt>
+<dd>以你本人過往 FIT 記錄擬合：每個坡度區間你平均跑多快。用同一條路線逐段換算「應需時間」，再與實際時間比較。它是你自己的基準，不是通用公式。</dd>
+<dt>TRI（Terrain Ruggedness Index，地形粗糙度指數）</dt>
+<dd>Riley (1999)：每個像素與周圍八格高差的均方根，單位為米。數值越大，地面越破碎（石級、沖溝、亂石）。本報告以 3 米 LiDAR 裸地 DTM 計算。</dd>
+<dt>p90（第 90 百分位）</dt>
+<dd>把全部路段的數值由小至大排列，九成路段低於此值。用中位數看「典型情況」，用 p90 看「最差的一成」。</dd>
+<dt>r（皮爾森相關係數）</dt>
+<dd>兩個數列同向變化的程度，範圍 −1 至 +1。+1 完全同步、0 無關、−1 完全反向。|r| 低於 0.3 一般視為關係微弱。</dd>
+<dt>後段效率變化（decoupling）</dt>
+<dd>比較前段與後段的「速度 ÷ 心率」。正值代表同樣心率跑得更慢，即耐力開始下滑；負值代表後段反而更有效率。已剔除頭 10 分鐘熱身。</dd>
+<dt>爬升密度</dt>
+<dd>總爬升 ÷ 總距離，單位 m/km。它反映路線的陡峭程度，用來判斷一次練習是否接近目標賽道的需求。</dd>
+</dl>
 
 </main>
 <footer>

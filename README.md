@@ -156,6 +156,13 @@ skips the intensity judgement rather than guessing an absolute bpm.
 Sensor assumptions, method limits and what the tool refuses to do:
 `references/limits.md`. Roadmap (sensors, cohort modelling): `ROADMAP.md`.
 
+## What the report contains
+
+KPI strip, assessment against the athlete's own slope–speed model, route map
+(Esri topographic basemap, 2D/3D terrain, colour by time delta or by terrain
+ruggedness, playback dot), per-km table, worst segments, terrain section when
+a DTM is supplied, training advice, and a glossary of every technical term.
+
 ## Terrain index (DTM)
 
 `--dtm file.asc` adds `terrain_index_m` per 100 m bin: Riley (1999) TRI, the RMS
