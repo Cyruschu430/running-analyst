@@ -37,6 +37,22 @@ Methods are cited, not copied. Full provenance in `references/sport-science.md`.
 Formulas and measurements are facts and are not copyrightable; the papers'
 text and figures are. We reproduce neither.
 
+## Terrain data (not shipped with the repository)
+
+| Source | Resolution | Used for |
+|---|---|---|
+| CEDD LiDAR DTM 2020, CSDI `cedd_rcd_1629267205233_87895` | 0.5 m tiles, resampled | TRI and the per-100 m terrain index |
+| LandsD territory-wide DTM, CSDI | 5 m | 3D relief, baked to z12 (~35 m) display tiles |
+
+Both are published open data; attribution is required and is shown on the map
+in any generated report. No government raster is committed — `*.asc`, `*.tif`
+and baked tile JSON are gitignored, and a report is a derived artefact the
+reader generates locally.
+
+Two scales appear in one report: TRI is computed from a 3 m bare-earth grid,
+while the 3D relief is a ~35 m display tile. They are deliberately not
+comparable cell-for-cell, and the report says so in the TRI section.
+
 ## Data that must never be committed
 
 | Item | Why |

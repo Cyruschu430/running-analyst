@@ -7,7 +7,7 @@ All numbers come from report.py; this file only arranges them. Copy is written
 in professional written Chinese. Every metric carries a source — see
 references/sport-science.md. Nothing here is invented.
 """
-import argparse, json
+import argparse, json, math
 
 import report as core
 
@@ -238,8 +238,9 @@ def map_block(geojson, has_dtm=False, dem_tiles=None):
     if dem_tiles:
         dem_url = "'lidar://{z}/{x}/{y}'"
         dem_maxz = max(int(k.split("/")[0]) for k in dem_tiles)
+        px = round(156543.03392 * math.cos(math.radians(22.4)) / 2 ** dem_maxz)
         attr = ("'底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · "
-                "地形 土木工程拓展署 LiDAR DTM 2020（3 m，內嵌）· MapLibre GL JS'")
+                f"3D 地形 土木工程拓展署 DEM z{dem_maxz}（約 {px} m 顯示級，內嵌）· MapLibre GL JS'")
         dem_js = DEM_JS.replace("__TILES__", json.dumps(dem_tiles))
     else:
         dem_url = "'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'"
@@ -296,13 +297,13 @@ const map = new maplibregl.Map({{
                    'hillshade-accent-color': '#243447', 'hillshade-exaggeration': 0.25 }} }},
       {{ id: 'casing', type: 'line', source: 'route',
          layout: {{ 'line-join': 'round', 'line-cap': 'round' }},
-         paint: {{ 'line-color': '#ffffff', 'line-opacity': 0.92,
-                   'line-width': ['interpolate', ['linear'], ['zoom'], 9, 5.5, 12, 8.5, 15, 14] }} }},
+         paint: {{ 'line-color': '#1b1b1b', 'line-opacity': 0.42,
+                   'line-width': ['interpolate', ['linear'], ['zoom'], 9, 6.8, 12, 9.6, 15, 15] }} }},
       {{ id: 'route', type: 'line', source: 'route',
          layout: {{ 'line-join': 'round', 'line-cap': 'round' }},
          paint: {{
            'line-color': BY_DELTA,
-           'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.2, 12, 5.6, 15, 10]
+           'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3.8, 12, 6, 15, 10.5]
          }} }},
       {{ id: 'dot-glow', type: 'circle', source: 'dot',
          paint: {{ 'circle-radius': 16, 'circle-color': '#E8590C', 'circle-opacity': 0.22, 'circle-blur': 1 }} }},
@@ -536,7 +537,8 @@ def build(rep, prof, segs, gj, has_dtm=False, dem_tiles=None):
         terrain_block = (
             f'<h2>地形粗糙度</h2>\n'
             f'<p class="sub">TRI：每個像素與 8 個鄰居高差的 RMS（Riley 1999），'
-            f'以 LiDAR 派生 3 m 裸地 DTM 計算。</p>\n'
+            f'以 LiDAR 派生 3 m 裸地 DTM 計算；地圖 3D 起伏為 z12 壓縮顯示級，兩者尺度不同，'
+            f'請勿直接對照高度。</p>\n'
             f'<ul><li>{ts["n"]} 段：中位數 {ts["median"]:.2f} m、第 90 百分位（p90，九成路段低於此值）{ts["p90"]:.2f} m、'
             f'最大 {ts["mx"]:.2f} m。</li>'
             f'<li>與時間損失的相關性（皮爾森 r：+1 表示完全同步、0 表示無關、'
