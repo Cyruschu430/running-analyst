@@ -1,5 +1,7 @@
 # Running Analyst
 
+[![tests](https://github.com/Cyruschu430/running-analyst/actions/workflows/tests.yml/badge.svg)](https://github.com/Cyruschu430/running-analyst/actions/workflows/tests.yml)
+
 **A post-training agent for runners.** Turn one activity file into an honest,
 sourced performance report — what happened, where you lost time, and why.
 
