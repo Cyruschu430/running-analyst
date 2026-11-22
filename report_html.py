@@ -188,6 +188,50 @@ def svg_profile(segs, w=900, h=190):
             f'{ticks}</svg>')
 
 
+DEM_JS = r"""
+const DEM_TILES = __TILES__;
+const ZERO_TILE = (() => {
+  const bin = atob("iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB+0lEQVR42u3TQQkAAAjAwEU3un8reHAJBmsK3pIAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgAJMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAyAASTAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADADHAnGpB4FDLHHvAAAAAElFTkSuQmCC");
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+})();
+maplibregl.addProtocol('lidar', (params, abort) => {
+  const key = params.url.replace('lidar://', '');
+  const b64 = DEM_TILES[key];
+  if (b64) {
+    const bin = atob(b64.slice(b64.indexOf(',') + 1));
+    const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    return Promise.resolve({ data: buf.buffer });
+  }
+  return fetch('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + key + '.png')
+    .then(r => r.blob())
+    .then(b => (window.OffscreenCanvas ? clampTile(b) : b.arrayBuffer())
+      .catch(() => b.arrayBuffer()))
+    .then(buf => ({ data: buf }))
+    .catch(() => ({ data: ZERO_TILE }));   // outside the baked box: flat, never a broken source
+});
+
+async function clampTile(blob) {
+  // SRTM voids (e.g. Sha Tin station) encode -2935 m and render as cliffs
+  const bmp = await createImageBitmap(blob);
+  const cv = new OffscreenCanvas(256, 256), cx = cv.getContext('2d');
+  cx.drawImage(bmp, 0, 0);
+  const im = cx.getImageData(0, 0, 256, 256), d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    let e = (d[i] * 256 + d[i + 1] + d[i + 2] / 256) - 32768;
+    if (e < 0 || e > 950) e = e < 0 ? 0 : 950;
+    const v = Math.round((e + 32768) * 256);
+    d[i] = (v >> 16) & 255; d[i + 1] = (v >> 8) & 255; d[i + 2] = v & 255;
+  }
+  cx.putImageData(im, 0, 0);
+  const out = await cv.convertToBlob({ type: 'image/png' });
+  return out.arrayBuffer();
+}
+"""
+
+
 def map_block(geojson, has_dtm=False, dem_tiles=None):
     gj = json.dumps(geojson, ensure_ascii=False)
     mode_btn = '<button id="tmode">切換上色</button>' if has_dtm else ""
@@ -196,17 +240,7 @@ def map_block(geojson, has_dtm=False, dem_tiles=None):
         dem_maxz = 14
         attr = ("'底圖 © Esri, HERE, Garmin, © OpenStreetMap contributors · "
                 "地形 土木工程拓展署 LiDAR DTM 2020（3 m，內嵌）· MapLibre GL JS'")
-        dem_js = ("const DEM_TILES = " + json.dumps(dem_tiles) + ";\n"
-                  "maplibregl.addProtocol('lidar', (params, abort) => new Promise((res, rej) => {\n"
-                  "  const key = params.url.replace('lidar://', '');\n"
-                  "  const b64 = DEM_TILES[key];\n"
-                  "  if (b64) { const bin = atob(b64.slice(b64.indexOf(',') + 1));\n"
-                  "    const buf = new Uint8Array(bin.length);\n"
-                  "    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);\n"
-                  "    res({ data: buf.buffer }); return; }\n"
-                  "  fetch('https://s3.amazonaws.com/elevation-tiles-prod/terrarium/' + key + '.png')\n"
-                  "    .then(r => r.arrayBuffer()).then(d => res({ data: d })).catch(rej);\n"
-                  "}));")
+        dem_js = DEM_JS.replace("__TILES__", json.dumps(dem_tiles))
     else:
         dem_url = "'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'"
         dem_maxz = 15
@@ -277,6 +311,7 @@ const map = new maplibregl.Map({{
   attributionControl: {{ compact: true, customAttribution: {attr} }}
 }});
 map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'bottom-right');
+window.__map = map;   // ponytail: lets a debugger/report script move the camera
 const tbtn = document.getElementById('tmode');
 if (tbtn) {{
   const sub = document.getElementById('mapsub');
@@ -307,7 +342,7 @@ if (tbtn) {{
     const la = (a[1] + b[1]) / 2 * rad;
     cum.push(cum[i - 1] + R * Math.hypot(dla, dlo * Math.cos(la)));
   }}
-  const total = cum[cum.length - 1], DUR = 30000;
+  const total = cum[cum.length - 1], DUR = 60000;
   let playing = false, elapsed = 0, start = 0;
   const setDot = d => {{
     let i = 1;
@@ -328,13 +363,13 @@ if (tbtn) {{
     if (!playing) return;
     elapsed = Math.min(DUR, ts - start);
     // 10 Hz: terrain re-render per frame saturates the GPU on modest machines
-    if (ts - last >= 100) {{
+    if (ts - last >= 33) {{
       last = ts;
       const pos = setDot(total * elapsed / DUR);
       if (pos) {{
         const h = pos[2];
-        brg = brg === null ? h : brg + ((((h - brg) % 360) + 540) % 360 - 180) * 0.2;
-        map.jumpTo({{ center: [pos[0], pos[1]], bearing: brg, pitch: 58, zoom: 14.2 }});
+        brg = brg === null ? h : brg + ((((h - brg) % 360) + 540) % 360 - 180) * 0.08;
+        map.jumpTo({{ center: [pos[0], pos[1]], bearing: brg, pitch: 50, zoom: 13.6 }});
       }}
     }}
     if (elapsed < DUR) requestAnimationFrame(frame);
@@ -342,13 +377,15 @@ if (tbtn) {{
   }};
   let saved = null;
   const startFollow = () => {{
-    saved = {{ center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }};
+    try {{
+      saved = {{ center: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch(), bearing: map.getBearing() }};
+    }} catch (err) {{ saved = null; }}
     brg = null;
   }};
   const stopFollow = () => {{
     if (!saved) return;
-    map.easeTo({{ center: saved.center, zoom: saved.zoom, pitch: saved.pitch,
-                  bearing: saved.bearing, duration: 900 }});
+    try {{ map.easeTo({{ center: saved.center, zoom: saved.zoom, pitch: saved.pitch,
+                  bearing: saved.bearing, duration: 900 }}); }} catch (err) {{}}
     saved = null;
   }};
   pbtn.onclick = () => {{
@@ -377,6 +414,7 @@ if (tbtn) {{
       seg.textContent = describe(d);
     }};
   }}
+  setDot(0);
   map.once('load', () => setDot(0));
 }})();
 const b = new maplibregl.LngLatBounds();
@@ -386,14 +424,23 @@ map.fitBounds(b, {{ padding: 40, pitch: 45, bearing: -18, duration: 0 }});
 let is3d = false;
 document.getElementById('t3d').onclick = e => {{
   is3d = !is3d;
-  if (is3d) {{
-    map.setTerrain({{ source: 'dem', exaggeration: 1.5 }});
-    map.easeTo({{ pitch: 65, bearing: -18, duration: 700 }});
-  }} else {{
-    map.setTerrain(null);
-    map.easeTo({{ pitch: 0, duration: 700 }});
-  }}
-  e.target.textContent = is3d ? '切換 2D 平面' : '切換 3D 地形';
+  // isStyleLoaded() is unreliable once a raster source is mid-fetch, so retry
+  // instead of gating the button on it.
+  const apply = tries => {{
+    try {{
+      if (is3d) {{
+        map.setTerrain({{ source: 'dem', exaggeration: 1.5 }});
+        map.easeTo({{ pitch: 65, bearing: -18, duration: 700 }});
+      }} else {{
+        map.setTerrain(null);
+        map.easeTo({{ pitch: 0, duration: 700 }});
+      }}
+      e.target.textContent = is3d ? '切換 2D 平面' : '切換 3D 地形';
+    }} catch (err) {{
+      if (tries > 0) setTimeout(() => apply(tries - 1), 400);
+    }}
+  }};
+  apply(12);
 }};
 map.on('click', 'route', ev => {{
   const p = ev.features[0].properties;
