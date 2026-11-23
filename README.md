@@ -39,6 +39,14 @@ cp profile.example.json profile.json     # then edit your goal
 .venv/bin/python report.py activity.fit  # terminal summary only
 ```
 
+Add `--lang en` to either renderer for an English report or plan — Chinese stays
+the default and both come from the same code path, so the numbers are identical:
+
+```bash
+.venv/bin/python report_html.py activity.fit --profile profile.json --lang en --out report.html
+.venv/bin/python plan.py --profile profile.json --format pdf --lang en --pdf out/plan.pdf
+```
+
 Per-100 m attribution, with optional terrain roughness and athlete notes:
 
 ```bash

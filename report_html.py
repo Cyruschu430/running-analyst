@@ -9,6 +9,7 @@ references/sport-science.md. Nothing here is invented.
 """
 import argparse, json, math
 
+import i18n
 import report as core
 
 # goal -> (vertical density benchmark m/km, emphasis)
@@ -516,7 +517,7 @@ def terrain_stats(gj):
                 r_all=r_all, r_down=r_down, n_down=len(down))
 
 
-def build(rep, prof, segs, gj, has_dtm=False, dem_tiles=None):
+def _build(rep, prof, segs, gj, has_dtm=False, dem_tiles=None):
     notes, dens, target = assessment(rep, prof)
     worst = sorted(segs, key=lambda s: -s["delta_s"])[:3]
     tips = advice(prof, worst)
@@ -704,6 +705,12 @@ footer{{margin:48px 40px 0;padding:18px 0 40px;border-top:1px solid var(--line);
 </body></html>"""
 
 
+def build(rep, prof, segs, gj, has_dtm=False, dem_tiles=None, lang="zh"):
+    """Chinese is canonical; lang="en" rewrites the finished HTML (see i18n.py)."""
+    html = _build(rep, prof, segs, gj, has_dtm, dem_tiles)
+    return i18n.to_english(html) if lang == "en" else html
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("fit")
@@ -711,6 +718,7 @@ def main():
     ap.add_argument("--out", default="report.html")
     ap.add_argument("--dtm", help="Esri ASCII bare-earth DTM (adds terrain ruggedness)")
     ap.add_argument("--dem-tiles", help="baked terrarium tiles (bake_dem.py) for the 3D view")
+    ap.add_argument("--lang", choices=["zh", "en"], default="zh", help="report language")
     a = ap.parse_args()
 
     prof = json.load(open(a.profile))
@@ -726,7 +734,7 @@ def main():
     asc = core.load_asc(a.dtm) if a.dtm else None
     gj = route_features(recs, table, asc=asc)
     dem = json.load(open(a.dem_tiles)) if a.dem_tiles else None
-    out = build(rep, prof, segs, gj, asc is not None, dem)
+    out = build(rep, prof, segs, gj, asc is not None, dem, a.lang)
     open(a.out, "w", encoding="utf-8").write(out)
     print(f"wrote {a.out} ({len(out)/1024:.0f} KB) · {len(segs)} km · "
           f"{len(gj['features'])} route segments")

@@ -18,6 +18,8 @@ Rules used (see references/sport-science.md):
 """
 import argparse, datetime as dt, json, os, sys
 
+import i18n
+
 PACE_FACTORS = {  # share of the week; sums to 1.0 across the non-rest days
     "long": 0.30, "quality": 0.20, "easy1": 0.17, "easy2": 0.17,
     "easy3": 0.11, "short": 0.05,
@@ -341,7 +343,7 @@ TYPE_ZH = {"easy": "輕鬆跑", "hill repeats": "上坡重複", "descent techniq
            "long trail": "長距離越野", "strength": "肌力", "race": "比賽"}
 
 
-def render_html(plan, prof, base_dir="."):
+def _render_html(plan, prof, base_dir="."):
     """Printable A4 plan: cover + one page per week. Every number comes from plan."""
     def esc(x):
         return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -517,10 +519,16 @@ def render_html(plan, prof, base_dir="."):
 </body></html>"""
 
 
-def export_pdf(plan, prof, out_pdf):
+def render_html(plan, prof, base_dir=".", lang="zh"):
+    """Chinese is canonical; lang="en" rewrites the finished HTML (see i18n.py)."""
+    html = _render_html(plan, prof, base_dir)
+    return i18n.to_english(html) if lang == "en" else html
+
+
+def export_pdf(plan, prof, out_pdf, lang="zh"):
     """HTML -> PDF via headless Chromium (already on this machine; no new dependency)."""
     import os, subprocess, tempfile
-    html = render_html(plan, prof, os.path.dirname(os.path.abspath(out_pdf)))
+    html = render_html(plan, prof, os.path.dirname(os.path.abspath(out_pdf)), lang)
     html_path = os.path.splitext(out_pdf)[0] + ".html"
     open(html_path, "w").write(html)
     chrome = next((c for c in ("chromium-browser", "chromium", "google-chrome")
@@ -595,6 +603,7 @@ def main():
     ap.add_argument("--format", choices=["json", "icu", "pdf", "html"], default="json")
     ap.add_argument("--outdir", help="for --format icu: folder of workout text files")
     ap.add_argument("--pdf", help="write a printable PDF here")
+    ap.add_argument("--lang", choices=["zh", "en"], default="zh", help="plan language")
     a = ap.parse_args()
 
     prof = json.load(open(a.profile))
@@ -614,10 +623,10 @@ def main():
         target = a.pdf or (a.outdir or "out/plan") + ".pdf"
         if a.format == "html":
             hp = os.path.splitext(target)[0] + ".html"
-            open(hp, "w").write(render_html(plan, prof, os.path.dirname(os.path.abspath(hp))))
+            open(hp, "w").write(render_html(plan, prof, os.path.dirname(os.path.abspath(hp)), a.lang))
             print(f"wrote {os.path.splitext(target)[0] + '.html'}")
         else:
-            html_path, pdf_path = export_pdf(plan, prof, target)
+            html_path, pdf_path = export_pdf(plan, prof, target, a.lang)
             print(f"wrote {pdf_path}  (source {html_path})")
     if a.format == "icu":
         n = export_icu(plan, a.outdir or "out/icu", prof.get("lthr"))
